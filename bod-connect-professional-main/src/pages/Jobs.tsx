@@ -2,6 +2,8 @@ import { motion } from "framer-motion";
 import { MapPin, Briefcase, Bookmark, ExternalLink, Filter } from "lucide-react";
 import { useState, useEffect } from "react";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 function getIndustryColor(industry: string) {
   if (!industry) return "text-primary bg-primary/10";
   const i = industry.toLowerCase();
@@ -22,12 +24,12 @@ export default function Jobs() {
   useEffect(() => {
     async function fetchJobs() {
       try {
-        const res = await fetch("http://localhost:5000/api/jobs/");
+        const res = await fetch(`${API_URL}/api/jobs/`);
         if (!res.ok) throw new Error("Failed to fetch jobs");
         const data = await res.json();
         setJobs(data);
       } catch (err) {
-        setError("Could not load jobs. Make sure the backend is running.");
+        setError("Could not load jobs. Please try again later.");
       } finally {
         setLoading(false);
       }
