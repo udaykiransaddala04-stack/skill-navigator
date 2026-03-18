@@ -1,13 +1,20 @@
 import { motion } from "framer-motion";
-import { TrendingUp, Target, BookOpen, Briefcase, ArrowRight, Star, Users, Clock, CheckCircle2, Play } from "lucide-react";
+import { TrendingUp, Target, BookOpen, Briefcase, ArrowRight, Star, Users, CheckCircle2, Play } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
-interface Profile {
-  full_name: string;
-  headline: string;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+interface UserProfile {
+  id: number;
+  name: string;
+  email: string;
+}
+
+interface UserSkill {
+  skill_id: number;
+  skill_name: string;
+  level: number;
 }
 
 const container = {
@@ -19,79 +26,93 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+function getLevelPercent(level: number) {
+  return level === 3 ? 100 : level === 2 ? 60 : 30;
+}
+
+function getLevelLabel(level: number) {
+  if (level === 3) return "Advanced";
+  if (level === 2) return "Intermediate";
+  return "Beginner";
+}
+
 export default function Dashboard() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [skillCount, setSkillCount] = useState(0);
-  const [verifiedCount, setVerifiedCount] = useState(0);
-  const [testCount, setTestCount] = useState(0);
-  const [topSkills, setTopSkills] = useState<{ name: string; level: number }[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [userSkills, setUserSkills] = useState<UserSkill[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const token = localStorage.getItem("token");
 
   useEffect(() => {
-    if (!user) return;
+    if (!token) { setLoading(false); return; }
     async function load() {
-      const [profileRes, userSkillsRes, resultsRes] = await Promise.all([
-        supabase.from("profiles").select("full_name, headline").eq("user_id", user!.id).single(),
-        supabase.from("user_skills").select("skill_id, level, verified, skills(name)").eq("user_id", user!.id).order("level", { ascending: false }).limit(4),
-        supabase.from("user_skill_results").select("id").eq("user_id", user!.id),
-      ]);
-
-      if (profileRes.data) setProfile(profileRes.data);
-      if (userSkillsRes.data) {
-        setSkillCount(userSkillsRes.data.length);
-        setVerifiedCount(userSkillsRes.data.filter((s: any) => s.verified).length);
-        setTopSkills(userSkillsRes.data.map((s: any) => ({
-          name: (s.skills as any)?.name || "Unknown",
-          level: s.level,
-        })));
+      try {
+        const [profileRes, skillsRes] = await Promise.all([
+          fetch(`${API_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_URL}/api/skills/me`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        if (profileRes.ok) setProfile(await profileRes.json());
+        if (skillsRes.ok) setUserSkills(await skillsRes.json());
+      } finally {
+        setLoading(false);
       }
-      if (resultsRes.data) setTestCount(resultsRes.data.length);
     }
     load();
-  }, [user]);
+  }, []);
 
-  const firstName = profile?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "there";
-  const initials = profile?.full_name
-    ? profile.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+  const firstName = profile?.name?.split(" ")[0] || profile?.email?.split("@")[0] || "there";
+  const initials = profile?.name
+    ? profile.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "U";
 
+  const topSkills = [...userSkills].sort((a, b) => b.level - a.level).slice(0, 4);
+
   const stats = [
-    { label: "Skills Assessed", value: String(skillCount), icon: Target, color: "text-primary" },
-    { label: "Verified Skills", value: String(verifiedCount), icon: CheckCircle2, color: "text-success" },
-    { label: "Tests Taken", value: String(testCount), icon: BookOpen, color: "text-accent" },
+    { label: "Skills Added", value: String(userSkills.length), icon: Target, color: "text-primary" },
+    { label: "Advanced Skills", value: String(userSkills.filter((s) => s.level === 3).length), icon: CheckCircle2, color: "text-success" },
+    { label: "Job Roles", value: "4", icon: BookOpen, color: "text-accent" },
   ];
 
   const feedItems = [
     {
-      title: "Take a skill assessment",
-      description: "Prove your expertise by taking a test. Verified skills stand out to employers.",
+      title: "Add your skills",
+      description: "Tell us what you know — add skills at beginner, intermediate, or advanced level.",
       action: "Browse Skills",
       link: "/skills",
       icon: Play,
     },
     {
-      title: "Complete your profile",
-      description: "Add your headline, bio, and experience to make your profile stand out.",
-      action: "Edit Profile",
-      link: "/profile",
-      icon: Star,
-    },
-    {
       title: "Explore job matches",
-      description: "See which positions match your verified skill set.",
+      description: "See which positions match your skill set and find your gap.",
       action: "View Jobs",
       link: "/jobs",
       icon: Briefcase,
     },
+    {
+      title: "Analyze your skill gaps",
+      description: "Pick a target job and get a personalized learning path to close your gaps.",
+      action: "View Jobs",
+      link: "/jobs",
+      icon: TrendingUp,
+    },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
+        {/* Welcome */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl bg-card p-6 shadow-card border border-border">
           <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-2xl font-heading font-bold text-foreground">Welcome back, {firstName}</h1>
+              <h1 className="text-2xl font-heading font-bold text-foreground">Welcome back, {firstName} 👋</h1>
               <p className="text-muted-foreground mt-1">Here's your skill journey overview</p>
             </div>
             <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
@@ -100,6 +121,7 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
+        {/* Stats */}
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-3 gap-3">
           {stats.map((s) => (
             <motion.div key={s.label} variants={item} className="rounded-xl bg-card p-4 shadow-card border border-border hover:shadow-card-hover transition-shadow">
@@ -110,6 +132,7 @@ export default function Dashboard() {
           ))}
         </motion.div>
 
+        {/* Feed */}
         <motion.div variants={container} initial="hidden" animate="show" className="space-y-3">
           {feedItems.map((f, i) => (
             <motion.div key={i} variants={item} className="rounded-xl bg-card p-5 shadow-card border border-border hover:shadow-card-hover transition-shadow">
@@ -130,21 +153,21 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
+      {/* Sidebar */}
       <div className="space-y-6">
+        {/* Profile card */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="rounded-xl bg-card shadow-card border border-border overflow-hidden">
           <div className="h-20 bg-gradient-to-r from-primary to-primary/70" />
           <div className="px-5 pb-5 -mt-8">
             <div className="h-16 w-16 rounded-full bg-card border-4 border-card flex items-center justify-center shadow-card">
               <span className="text-xl font-heading font-bold text-primary">{initials}</span>
             </div>
-            <h3 className="font-heading font-bold text-foreground mt-2">{profile?.full_name || "Complete Profile"}</h3>
-            <p className="text-sm text-muted-foreground">{profile?.headline || "Add your headline"}</p>
-            <Link to="/profile" className="inline-flex items-center gap-1 text-sm text-primary hover:underline mt-3">
-              View Profile <ArrowRight className="h-3 w-3" />
-            </Link>
+            <h3 className="font-heading font-bold text-foreground mt-2">{profile?.name || "Your Name"}</h3>
+            <p className="text-sm text-muted-foreground">{profile?.email || ""}</p>
           </div>
         </motion.div>
 
+        {/* Top Skills */}
         {topSkills.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="rounded-xl bg-card p-5 shadow-card border border-border">
             <h3 className="font-heading font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -152,13 +175,13 @@ export default function Dashboard() {
             </h3>
             <div className="space-y-3">
               {topSkills.map((skill) => (
-                <div key={skill.name}>
+                <div key={skill.skill_id}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-foreground font-medium">{skill.name}</span>
-                    <span className="text-muted-foreground">{skill.level}%</span>
+                    <span className="text-foreground font-medium">{skill.skill_name}</span>
+                    <span className="text-muted-foreground">{getLevelLabel(skill.level)}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-secondary">
-                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${skill.level}%` }} />
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${getLevelPercent(skill.level)}%` }} />
                   </div>
                 </div>
               ))}
@@ -169,11 +192,12 @@ export default function Dashboard() {
           </motion.div>
         )}
 
+        {/* Quick Actions */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="rounded-xl bg-card p-5 shadow-card border border-border">
           <h3 className="font-heading font-semibold text-foreground mb-3">Quick Actions</h3>
           <div className="space-y-2">
             {[
-              { label: "Take a Test", icon: Play, link: "/skills" },
+              { label: "Add Skills", icon: Play, link: "/skills" },
               { label: "Browse Jobs", icon: Briefcase, link: "/jobs" },
               { label: "My Network", icon: Users, link: "/network" },
             ].map((a) => (
