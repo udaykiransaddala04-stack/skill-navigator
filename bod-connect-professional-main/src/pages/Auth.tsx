@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
 import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { useEffect } from "react";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -16,11 +15,12 @@ export default function Auth() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const navigate = useNavigate();
-  const { user } = useAuth();
 
+  // If already logged in, go to dashboard
   useEffect(() => {
-    if (user) navigate("/", { replace: true });
-  }, [user, navigate]);
+    const token = localStorage.getItem("token");
+    if (token) navigate("/", { replace: true });
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,26 +30,40 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        navigate("/");
+        // --- LOGIN ---
+        const res = await fetch(`${API_URL}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Login failed");
+
+        // Save token and user to localStorage
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+        navigate("/", { replace: true });
+
       } else {
+        // --- REGISTER ---
         if (!fullName.trim()) {
           setError("Please enter your full name");
           setLoading(false);
           return;
         }
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName },
-            emailRedirectTo: window.location.origin,
-          },
+        const res = await fetch(`${API_URL}/api/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: fullName, email, password }),
         });
-        if (error) throw error;
-        setSuccess("Account created! Check your email to verify, then sign in.");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Registration failed");
+
+        setSuccess("Account created! You can now sign in.");
         setIsLogin(true);
+        setEmail(email);
+        setPassword("");
+        setFullName("");
       }
     } catch (err: any) {
       setError(err.message || "An error occurred");
@@ -74,7 +88,7 @@ export default function Auth() {
           </p>
         </div>
         <div className="space-y-4">
-          {["Track & verify your skills", "Take assessments to prove expertise", "Get matched with perfect jobs"].map((t) => (
+          {["Track & verify your skills", "Analyze your skill gaps", "Get matched with perfect jobs"].map((t) => (
             <div key={t} className="flex items-center gap-3 text-primary-foreground/90">
               <div className="h-2 w-2 rounded-full bg-primary-foreground/60" />
               <span className="text-sm">{t}</span>
@@ -95,7 +109,7 @@ export default function Auth() {
             <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-heading font-bold text-xl">B</span>
             </div>
-            <span className="font-heading font-bold text-2xl text-foreground">Bod</span>
+            <span className="font-heading font-bold text-2xl text-foreground">Skill Navigator</span>
           </div>
 
           <h2 className="text-2xl font-heading font-bold text-foreground">
